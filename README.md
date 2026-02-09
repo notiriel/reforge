@@ -101,7 +101,7 @@ idea installPlugins ch.riesennet.reforge https://raw.githubusercontent.com/notir
 Install the Claude Code plugin:
 
 ```
-/plugin marketplace add notiriel/reforge
+/plugin marketplace add https://github.com/notiriel/reforge.git
 /plugin install reforge@notiriel-reforge
 ```
 
