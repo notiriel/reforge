@@ -1,0 +1,19 @@
+<idea-plugin>
+    <id>ch.riesennet.reforge</id>
+    <name>Reforge</name>
+    <version>1.0.0</version>
+    <vendor>riesennet</vendor>
+
+    <description><![CDATA[
+    Extensible refactoring engine for large-scale architectural refactorings.
+    Supports batch class moves, interface extraction, and dependency replacement
+    via YAML configuration files. Designed for headless, LLM-directed operation.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.java</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <appStarter id="reforge" implementation="ch.riesennet.reforge.ReforgeStarter"/>
+    </extensions>
+</idea-plugin>

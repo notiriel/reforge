@@ -1,0 +1,63 @@
+operations:
+  # Task domain
+  - type: move
+    target: com.example.taskmanager.task.model
+    sources:
+      - com.example.taskmanager.model.Task*
+  - type: move
+    target: com.example.taskmanager.task.repository
+    sources:
+      - com.example.taskmanager.repository.Task*
+  - type: move
+    target: com.example.taskmanager.task.service
+    sources:
+      - com.example.taskmanager.service.TaskService*
+  - type: move
+    target: com.example.taskmanager.task.controller
+    sources:
+      - com.example.taskmanager.controller.TaskController*
+  - type: move
+    target: com.example.taskmanager.task.dto
+    sources:
+      - com.example.taskmanager.dto.*Task*
+  - type: move
+    target: com.example.taskmanager.task.exception
+    sources:
+      - com.example.taskmanager.exception.TaskNotFoundException
+      - com.example.taskmanager.exception.DependencyNotMetException
+
+  # Project domain
+  - type: move
+    target: com.example.taskmanager.project.model
+    sources:
+      - com.example.taskmanager.model.Project
+  - type: move
+    target: com.example.taskmanager.project.repository
+    sources:
+      - com.example.taskmanager.repository.Project*
+  - type: move
+    target: com.example.taskmanager.project.service
+    sources:
+      - com.example.taskmanager.service.ProjectService*
+  - type: move
+    target: com.example.taskmanager.project.controller
+    sources:
+      - com.example.taskmanager.controller.ProjectController*
+  - type: move
+    target: com.example.taskmanager.project.dto
+    sources:
+      - com.example.taskmanager.dto.*Project*
+  - type: move
+    target: com.example.taskmanager.project.exception
+    sources:
+      - com.example.taskmanager.exception.ProjectNotFoundException
+
+  # Common/shared
+  - type: move
+    target: com.example.taskmanager.common.exception
+    sources:
+      - com.example.taskmanager.exception.GlobalExceptionHandler
+  - type: move
+    target: com.example.taskmanager.common.config
+    sources:
+      - com.example.taskmanager.config.DataInitializer

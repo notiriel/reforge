@@ -1,0 +1,23 @@
+# Example batch move configuration
+#
+# Format:
+#   target.package:
+#     - source.pattern.ClassName
+#     - source.pattern.Wildcard*
+#
+# Wildcards:
+#   * - matches any characters within a single segment
+#   ** - matches any number of package segments
+
+com.example.domain.entities:
+  - com.example.model.User
+  - com.example.model.Account
+  - com.example.legacy.**.*Entity
+
+com.example.service.impl:
+  - com.example.business.*Service
+  - com.example.handlers.*Handler
+
+com.example.api.dto:
+  - com.example.web.request.*Request
+  - com.example.web.response.*Response
