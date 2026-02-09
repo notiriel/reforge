@@ -26,6 +26,24 @@ export SDKMAN_DIR="/Users/stefan/.sdkman" && source "/Users/stefan/.sdkman/bin/s
 
 ## Running Reforge
 
+### Via wrapper script (recommended)
+
+The `reforge` wrapper script launches IntelliJ headlessly without opening a window or conflicting with a running IDE:
+
+```bash
+# Real run
+reforge /path/to/project /path/to/config.yaml
+
+# Dry run
+reforge /path/to/project /path/to/config.yaml --dry-run
+```
+
+Install the wrapper: `cp scripts/reforge.sh ~/.local/bin/reforge && chmod +x ~/.local/bin/reforge`
+
+Set `IDEA_HOME` to override IntelliJ location (macOS: the .app bundle, Linux: the installation dir).
+
+### Via Gradle runIde (development)
+
 ```bash
 # Real run
 ./gradlew runIde --args="reforge /path/to/project /path/to/config.yaml"
@@ -267,6 +285,14 @@ src/test/java/com.example.taskmanager
 Reforge is distributed as a Claude Code plugin. The plugin manifest is at `.claude-plugin/plugin.json` and the skill is at `skills/reforge/SKILL.md`.
 
 ### Installation (for users)
+
+Install the wrapper script:
+
+```bash
+mkdir -p ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/notiriel/reforge/main/scripts/reforge.sh -o ~/.local/bin/reforge
+chmod +x ~/.local/bin/reforge
+```
 
 Install the IntelliJ plugin:
 

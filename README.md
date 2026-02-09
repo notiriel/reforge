@@ -74,27 +74,50 @@ The plugin ZIP is built to `build/distributions/`.
 
 ## Usage
 
-### Via Gradle runIde
+### Via wrapper script (recommended)
+
+The `reforge` wrapper script launches IntelliJ headlessly — no window, no dock icon, no conflict with a running IDE:
 
 ```bash
+# Install the wrapper
+mkdir -p ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/notiriel/reforge/main/scripts/reforge.sh -o ~/.local/bin/reforge
+chmod +x ~/.local/bin/reforge
+
 # Real run
-./gradlew runIde --args="reforge /path/to/project /path/to/reforge.yaml"
+reforge /path/to/project /path/to/reforge.yaml
 
 # Dry run
-./gradlew runIde --args="reforge /path/to/project /path/to/reforge.yaml --dry-run"
+reforge /path/to/project /path/to/reforge.yaml --dry-run
 ```
 
-### Via IntelliJ Command Line
+Set `IDEA_HOME` to override IntelliJ location if auto-detection doesn't work. Supports macOS and Linux.
+
+### Via Gradle runIde (development)
 
 ```bash
-/path/to/idea reforge /path/to/project /path/to/reforge.yaml [--dry-run]
+./gradlew runIde --args="reforge /path/to/project /path/to/reforge.yaml"
 ```
+
+### Via `idea` CLI (alternative)
+
+```bash
+idea reforge /path/to/project /path/to/reforge.yaml [--dry-run]
+```
+
+Note: This uses macOS `open -na` which shows a dock icon and may conflict with a running IDE instance. Prefer the wrapper script.
 
 ### Via Claude Code Skill
 
-Install the IntelliJ plugin:
+Install the wrapper script and IntelliJ plugin:
 
 ```bash
+# Wrapper script
+mkdir -p ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/notiriel/reforge/main/scripts/reforge.sh -o ~/.local/bin/reforge
+chmod +x ~/.local/bin/reforge
+
+# IntelliJ plugin
 idea installPlugins ch.riesennet.reforge https://raw.githubusercontent.com/notiriel/reforge/main/updatePlugins.xml
 ```
 
