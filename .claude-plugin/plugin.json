@@ -1,0 +1,10 @@
+{
+  "name": "reforge",
+  "description": "LLM-directed refactoring engine — orchestrate large-scale Java/Kotlin architectural refactorings using IntelliJ's refactoring engine via CLI + YAML config.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Stefan Riesen"
+  },
+  "repository": "https://github.com/notiriel/reforge",
+  "license": "MIT"
+}

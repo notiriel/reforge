@@ -262,9 +262,26 @@ src/test/java/com.example.taskmanager
       └── controller/  ProjectControllerTest
 ```
 
-## Claude Code Skill
+## Claude Code Plugin
 
-The `/reforge` skill (`.claude/skills/reforge/SKILL.md`) lets an LLM orchestrate refactorings:
+Reforge is distributed as a Claude Code plugin. The plugin manifest is at `.claude-plugin/plugin.json` and the skill is at `skills/reforge/SKILL.md`.
+
+### Installation (for users)
+
+Install the IntelliJ plugin:
+
+```bash
+idea installPlugins ch.riesennet.reforge https://raw.githubusercontent.com/notiriel/reforge/main/updatePlugins.xml
+```
+
+Install the Claude Code plugin:
+
+```
+/plugin marketplace add notiriel/reforge
+/plugin install reforge@notiriel-reforge
+```
+
+Then use in any project:
 
 ```
 /reforge restructure the project into hexagonal architecture

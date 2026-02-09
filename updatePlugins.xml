@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugins>
+  <plugin id="ch.riesennet.reforge"
+          url="https://github.com/notiriel/reforge/releases/latest/download/reforge.zip"
+          version="1.0.0">
+    <idea-version since-build="243" until-build="253.*"/>
+    <name>Reforge</name>
+    <description>LLM-directed refactoring engine for large-scale architectural refactorings via CLI + YAML config.</description>
+  </plugin>
+</plugins>

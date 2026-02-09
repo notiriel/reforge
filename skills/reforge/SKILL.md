@@ -9,19 +9,22 @@ argument-hint: "[describe the refactoring goal]"
 
 You are orchestrating a large-scale architectural refactoring using the **Reforge** IntelliJ plugin. Reforge executes refactoring operations headlessly via CLI + YAML config, using IntelliJ's refactoring engine for full reference/import updating.
 
-## Prerequisites
+**Prerequisite:** The `idea` CLI command must be available (IntelliJ IDEA > Tools > Create Command-Line Launcher).
 
-Check if the Reforge plugin project is available:
+## Setup
+
+Check if the Reforge plugin is installed in IntelliJ:
 
 ```bash
-ls ~/development/intellij-batch-mover/build.gradle.kts
+find ~/Library/Application\ Support/JetBrains/IntelliJIdea*/plugins \
+     ~/.local/share/JetBrains/IntelliJIdea*/plugins \
+     -maxdepth 1 -name "reforge" -type d 2>/dev/null
 ```
 
-If the plugin needs building:
+If not found, install it:
 
 ```bash
-export SDKMAN_DIR="$HOME/.sdkman" && source "$SDKMAN_DIR/bin/sdkman-init.sh"
-cd ~/development/intellij-batch-mover && gradle buildPlugin
+idea installPlugins ch.riesennet.reforge https://raw.githubusercontent.com/notiriel/reforge/main/updatePlugins.xml
 ```
 
 ## Workflow
@@ -89,15 +92,11 @@ operations:
 ### 4. Execute Reforge
 
 ```bash
-export SDKMAN_DIR="$HOME/.sdkman" && source "$SDKMAN_DIR/bin/sdkman-init.sh"
-
 # Dry run first to preview
-gradle -p ~/development/intellij-batch-mover runIde \
-  --args="reforge <project-path> <project-path>/reforge.yaml --dry-run"
+idea reforge <project-path> <project-path>/reforge.yaml --dry-run
 
 # Real run
-gradle -p ~/development/intellij-batch-mover runIde \
-  --args="reforge <project-path> <project-path>/reforge.yaml"
+idea reforge <project-path> <project-path>/reforge.yaml
 ```
 
 ### 5. Validate
@@ -122,7 +121,7 @@ Tell the user:
 
 ## Common Refactoring Patterns
 
-### Package reorganization (flat → domain-grouped)
+### Package reorganization (flat -> domain-grouped)
 
 ```yaml
 operations:
@@ -169,6 +168,7 @@ operations:
 
 ## Troubleshooting
 
+- **`idea: command not found`**: Open IntelliJ > Tools > Create Command-Line Launcher
 - **"No classes matched"**: Check pattern spelling, ensure the project compiles, try without wildcards first
 - **IndexNotReadyException**: Usually auto-retried (3 attempts). If persistent, the project may have compilation errors
 - **Tests fail after refactoring**: Check for string-based class references (reflection, Spring config) that don't get updated by IntelliJ's refactoring engine

@@ -92,11 +92,26 @@ The plugin ZIP is built to `build/distributions/`.
 
 ### Via Claude Code Skill
 
+Install the IntelliJ plugin:
+
+```bash
+idea installPlugins ch.riesennet.reforge https://raw.githubusercontent.com/notiriel/reforge/main/updatePlugins.xml
+```
+
+Install the Claude Code plugin:
+
+```
+/plugin marketplace add notiriel/reforge
+/plugin install reforge@notiriel-reforge
+```
+
+Then use in any project:
+
 ```
 /reforge restructure the project into domain-driven packages
 ```
 
-The Claude Code skill analyzes the codebase, generates the YAML config, executes Reforge, and validates by running tests.
+The skill analyzes the codebase, generates the YAML config, executes Reforge, and validates by running tests.
 
 ## How It Works
 
