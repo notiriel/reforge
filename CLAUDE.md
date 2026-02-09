@@ -112,6 +112,48 @@ Each operation type implements `Operation`:
 - **Stderr for all output**: Gradle only shows stderr from `runIde`.
 - **`-Djava.awt.headless=true`**: Prevents any UI dialogs from opening during headless execution.
 
+## Testing
+
+### Unit Tests
+
+```bash
+gradle test           # Run unit tests
+gradle koverLog       # Print line coverage percentage
+gradle koverHtmlReport  # Generate HTML coverage report (build/reports/kover/html/)
+gradle koverXmlReport   # Generate XML coverage report
+```
+
+59 unit tests across 8 test files covering all pure logic (config parsing, pattern matching, arg parsing, batching, `parseSpec()` methods, registry lookups). Coverage tool: [Kover](https://github.com/Kotlin/kotlinx-kover) (JetBrains' Kotlin coverage tool).
+
+**Not unit-tested** (covered by E2E): `Operation.execute()` implementations, `HeadlessMoveProcessor`, infrastructure classes (`ProjectSetup`, `VfsHelper`, `IndexingHelper`), `ReforgeStarter.run()`/`openProject()`/`closeProject()`.
+
+**Note on E2E coverage instrumentation**: JaCoCo/Kover agents cannot instrument `runIde` — IntelliJ's `PathClassLoader` bypasses `ClassFileTransformer`, and the Kover agent disrupts indexing. Unit test coverage via Kover works because test classes are loaded directly from the classpath, not through the plugin sandbox.
+
+### Test Files
+
+```
+src/test/kotlin/ch/riesennet/reforge/
+├── ReforgeConfigTest.kt                              # YAML parsing
+├── ClassResolverTest.kt                              # Glob pattern → regex
+├── ReforgeStarterTest.kt                             # parseArgs(), groupIntoBatches()
+├── ProgressReporterTest.kt                           # Counter tracking, hasFailures()
+├── OperationRegistryTest.kt                          # Type lookup, knownTypes()
+└── operations/
+    ├── move/MoveOperationParseSpecTest.kt            # Move spec parsing
+    ├── extract/ExtractInterfaceOperationParseSpecTest.kt  # Extract spec parsing
+    └── replace/ReplaceDependencyOperationParseSpecTest.kt # Replace spec parsing
+```
+
+### E2E Test
+
+A Spring Boot test project exists at `src/test/resources/test-project/` and at `~/development/test-project/` for end-to-end testing. It is a task manager backend with 21 Java source classes and 5 test classes across 7 packages with 46 JUnit 5 tests.
+
+### Test Dependencies
+
+- JUnit Jupiter 5.11.4
+- JUnit 4.13.2 + Vintage Engine (required by IntelliJ Platform test runner)
+- Kover 0.9.1
+
 ## Dependencies
 
 - IntelliJ Platform SDK (IC 2024.3, build 243)

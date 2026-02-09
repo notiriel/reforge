@@ -43,13 +43,13 @@ class ReforgeStarter : ApplicationStarter {
         }
     }
 
-    private data class Args(
+    internal data class Args(
         val projectPath: String,
         val configPath: String,
         val dryRun: Boolean
     )
 
-    private fun parseArgs(args: List<String>): Args {
+    internal fun parseArgs(args: List<String>): Args {
         if (args.size < 2) {
             throw IllegalArgumentException("Missing required arguments")
         }
@@ -151,14 +151,14 @@ class ReforgeStarter : ApplicationStarter {
         }
     }
 
-    private data class Batch(val type: String, val entries: List<RawOperation>)
+    internal data class Batch(val type: String, val entries: List<RawOperation>)
 
     /**
      * Groups consecutive same-type operations into batches.
      * This preserves ordering while allowing same-type optimizations
      * (e.g., multi-pass resolve for moves).
      */
-    private fun groupIntoBatches(ops: List<RawOperation>): List<Batch> {
+    internal fun groupIntoBatches(ops: List<RawOperation>): List<Batch> {
         if (ops.isEmpty()) return emptyList()
 
         val batches = mutableListOf<Batch>()

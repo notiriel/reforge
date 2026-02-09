@@ -2,6 +2,7 @@ plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "2.3.10"
     id("org.jetbrains.intellij.platform") version "2.11.0"
+    id("org.jetbrains.kotlinx.kover") version "0.9.1"
 }
 
 group = "ch.riesennet.reforge"
@@ -20,6 +21,10 @@ dependencies {
         intellijIdeaCommunity("2024.3")
         bundledPlugin("com.intellij.java")
     }
+    testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testRuntimeOnly("junit:junit:4.13.2")
+    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.11.4")
 }
 
 kotlin {
@@ -34,6 +39,10 @@ tasks {
 
     buildSearchableOptions {
         enabled = false
+    }
+
+    test {
+        useJUnitPlatform()
     }
 
     runIde {

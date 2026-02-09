@@ -111,6 +111,34 @@ The Claude Code skill analyzes the codebase, generates the YAML config, executes
    - Saves documents and syncs VFS
 6. Prints summary of results
 
+## Testing
+
+### Unit Tests
+
+```bash
+./gradlew test              # Run 59 unit tests
+./gradlew koverLog          # Print line coverage summary
+./gradlew koverHtmlReport   # HTML report → build/reports/kover/html/
+```
+
+Unit tests cover all pure logic: YAML config parsing, glob pattern matching, CLI arg parsing, operation batching, `parseSpec()` for all 3 operation types, operation registry, and progress tracking. Coverage is measured with [Kover](https://github.com/Kotlin/kotlinx-kover).
+
+IntelliJ API orchestration (`execute()` methods, PSI manipulation, indexing) is covered by the E2E test.
+
+### E2E Test
+
+A complete Spring Boot test project is included at `src/test/resources/test-project/` (21 source classes, 5 test classes, 46 JUnit 5 tests):
+
+```bash
+# Copy test project (runIde modifies files in place)
+cp -r src/test/resources/test-project /tmp/test-project
+
+# Run Reforge
+./gradlew buildPlugin
+./gradlew runIde --args="reforge /tmp/test-project /tmp/test-project/refactor.yaml"
+# Expect: 25 moved, 0 failed, 7 packages removed
+```
+
 ## Requirements
 
 - IntelliJ IDEA 2024.3+ (build 243+)
