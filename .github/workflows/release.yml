@@ -35,8 +35,8 @@ jobs:
       - name: Build plugin
         run: ./gradlew buildPlugin
 
-      - name: Verify plugin
-        run: ./gradlew verifyPlugin
+      - name: Verify plugin structure
+        run: ./gradlew verifyPluginStructure
 
       - name: Get version from tag
         id: version
