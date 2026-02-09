@@ -1,0 +1,14 @@
+{
+  "name": "reforge",
+  "owner": {
+    "name": "Stefan Riesen"
+  },
+  "plugins": [
+    {
+      "name": "reforge",
+      "source": ".",
+      "description": "LLM-directed refactoring engine — orchestrate large-scale Java/Kotlin architectural refactorings using IntelliJ's refactoring engine via CLI + YAML config.",
+      "version": "1.0.0"
+    }
+  ]
+}
