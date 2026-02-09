@@ -29,16 +29,30 @@ idea installPlugins ch.riesennet.reforge https://raw.githubusercontent.com/notir
 
 ## Workflow
 
-### 1. Analyze the target project
+### 1. Verify the project builds
+
+Before doing anything else, confirm the project is in a compilable state. Reforge relies on IntelliJ's indexer and refactoring engine, which produce incorrect results on broken code (stale imports, unresolved references, package/path mismatches).
+
+```bash
+# Maven
+cd <project-path> && mvn compile -q
+
+# Gradle
+cd <project-path> && ./gradlew classes -q
+```
+
+If the build fails, **stop and tell the user**. The project must compile cleanly before Reforge can run. Do NOT generate a refactoring config for a project that doesn't build.
+
+### 2. Analyze the target project
 
 Before generating config, understand the codebase:
 
 - **Package structure**: `find <project>/src -type d | head -50`
 - **Class inventory**: Use Glob to find `**/*.java` or `**/*.kt` files
 - **Dependencies between classes**: Use Grep to find import patterns
-- **Test structure**: Check `src/test/java` layout
+- **Test structure**: Check `src/test/java` layout — identify which test classes correspond to which production classes
 
-### 2. Design the refactoring plan
+### 3. Design the refactoring plan
 
 Based on the user's goal, determine which operations to use:
 
@@ -49,7 +63,7 @@ Based on the user's goal, determine which operations to use:
 | Domain-driven structure | `move` to domain packages |
 | Dependency inversion | `extract-interface` + `replace-dependency` |
 
-### 3. Generate `reforge.yaml`
+### 4. Generate `reforge.yaml`
 
 Write a YAML config file in the target project root:
 
@@ -84,12 +98,24 @@ operations:
 - Extract-interface should come BEFORE replace-dependency (interface must exist before it can be used)
 - Consecutive same-type operations are batched automatically for efficiency
 
+**Always include test classes:** When moving a production class, include its corresponding test class in the same move operation. Reforge places test classes into the test source root automatically, so they can share the same `target` package. For example, if moving `TaskService` to `com.example.app.task.service`, also include `TaskServiceTest` as a source — it will end up in `src/test/java/com/example/app/task/service/`.
+
+```yaml
+  - type: move
+    target: com.example.app.task.service
+    sources:
+      - com.example.app.service.TaskService
+      - com.example.app.service.TaskServiceTest   # test class moves to test source root
+```
+
+If you are using wildcards, the pattern will already match test classes (e.g., `TaskService*` matches both `TaskService` and `TaskServiceTest`). Verify this by checking `src/test/java` for any test classes that correspond to the production classes being moved — if a test class wouldn't be matched by an existing wildcard, add it explicitly.
+
 **Wildcard patterns:**
 - `*` matches within a single segment (e.g., `Task*` matches `Task`, `TaskStatus`, `TaskService`)
 - `**` matches zero or more package segments (e.g., `com.example.**.*Entity`)
 - Test classes matching wildcards automatically go to the test source root
 
-### 4. Execute Reforge
+### 5. Execute Reforge
 
 ```bash
 # Dry run first to preview
@@ -99,7 +125,7 @@ idea reforge <project-path> <project-path>/reforge.yaml --dry-run
 idea reforge <project-path> <project-path>/reforge.yaml
 ```
 
-### 5. Validate
+### 6. Validate
 
 After execution, run the project's test suite:
 
@@ -112,7 +138,7 @@ mvn clean verify
 ./gradlew test
 ```
 
-### 6. Report results
+### 7. Report results
 
 Tell the user:
 - How many classes were moved/extracted/replaced
