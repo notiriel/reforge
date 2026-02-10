@@ -9,16 +9,11 @@ argument-hint: "[describe the refactoring goal]"
 
 You are orchestrating a large-scale architectural refactoring using the **Reforge** IntelliJ plugin. Reforge executes refactoring operations headlessly via CLI + YAML config, using IntelliJ's refactoring engine for full reference/import updating.
 
-**Prerequisites:** IntelliJ IDEA must be installed. The Reforge IntelliJ plugin and wrapper script are set up automatically below.
+**Prerequisites:** IntelliJ IDEA must be installed. The Reforge IntelliJ plugin must be installed (see below).
+
+The wrapper script at `~/.claude/plugins/marketplaces/notiriel-reforge/scripts/reforge.sh` launches IntelliJ headlessly without opening a window or conflicting with a running IDE.
 
 ## Setup
-
-Download the `reforge` wrapper script (launches IntelliJ headlessly without opening a window or conflicting with a running IDE):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/notiriel/reforge/main/scripts/reforge.sh -o /tmp/reforge.sh
-chmod +x /tmp/reforge.sh
-```
 
 Check if the Reforge plugin is installed in IntelliJ:
 
@@ -127,10 +122,10 @@ If you are using wildcards, the pattern will already match test classes (e.g., `
 
 ```bash
 # Dry run first to preview
-/tmp/reforge.sh <project-path> <project-path>/reforge.yaml --dry-run
+~/.claude/plugins/marketplaces/notiriel-reforge/scripts/reforge.sh <project-path> <project-path>/reforge.yaml --dry-run
 
 # Real run
-/tmp/reforge.sh <project-path> <project-path>/reforge.yaml
+~/.claude/plugins/marketplaces/notiriel-reforge/scripts/reforge.sh <project-path> <project-path>/reforge.yaml
 ```
 
 ### 6. Validate
@@ -202,7 +197,7 @@ operations:
 
 ## Troubleshooting
 
-- **`reforge.sh: No such file`**: Re-download the wrapper script (see Setup above)
+- **`reforge.sh: No such file`**: Ensure the Claude Code plugin is installed (`/plugin install reforge@notiriel-reforge`)
 - **"No classes matched"**: Check pattern spelling, ensure the project compiles, try without wildcards first
 - **IndexNotReadyException**: Usually auto-retried (3 attempts). If persistent, the project may have compilation errors
 - **Tests fail after refactoring**: Check for string-based class references (reflection, Spring config) that don't get updated by IntelliJ's refactoring engine
