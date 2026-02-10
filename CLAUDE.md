@@ -286,14 +286,6 @@ Reforge is distributed as a Claude Code plugin. The plugin manifest is at `.clau
 
 ### Installation (for users)
 
-Install the wrapper script:
-
-```bash
-mkdir -p ~/.local/bin
-curl -fsSL https://raw.githubusercontent.com/notiriel/reforge/main/scripts/reforge.sh -o ~/.local/bin/reforge
-chmod +x ~/.local/bin/reforge
-```
-
 Install the IntelliJ plugin:
 
 ```bash

@@ -76,22 +76,17 @@ The plugin ZIP is built to `build/distributions/`.
 
 ### Via wrapper script (recommended)
 
-The `reforge` wrapper script launches IntelliJ headlessly — no window, no dock icon, no conflict with a running IDE:
+The `reforge` wrapper script (`scripts/reforge.sh`) launches IntelliJ headlessly — no window, no dock icon, no conflict with a running IDE. Supports macOS and Linux.
 
 ```bash
-# Install the wrapper
-mkdir -p ~/.local/bin
-curl -fsSL https://raw.githubusercontent.com/notiriel/reforge/main/scripts/reforge.sh -o ~/.local/bin/reforge
-chmod +x ~/.local/bin/reforge
-
 # Real run
-reforge /path/to/project /path/to/reforge.yaml
+./scripts/reforge.sh /path/to/project /path/to/reforge.yaml
 
 # Dry run
-reforge /path/to/project /path/to/reforge.yaml --dry-run
+./scripts/reforge.sh /path/to/project /path/to/reforge.yaml --dry-run
 ```
 
-Set `IDEA_HOME` to override IntelliJ location if auto-detection doesn't work. Supports macOS and Linux.
+Set `IDEA_HOME` to override IntelliJ location if auto-detection doesn't work.
 
 ### Via Gradle runIde (development)
 
@@ -109,15 +104,9 @@ Note: This uses macOS `open -na` which shows a dock icon and may conflict with a
 
 ### Via Claude Code Skill
 
-Install the wrapper script and IntelliJ plugin:
+Install the IntelliJ plugin:
 
 ```bash
-# Wrapper script
-mkdir -p ~/.local/bin
-curl -fsSL https://raw.githubusercontent.com/notiriel/reforge/main/scripts/reforge.sh -o ~/.local/bin/reforge
-chmod +x ~/.local/bin/reforge
-
-# IntelliJ plugin
 idea installPlugins ch.riesennet.reforge https://raw.githubusercontent.com/notiriel/reforge/main/updatePlugins.xml
 ```
 
