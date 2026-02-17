@@ -83,7 +83,15 @@ object ClassResolver {
     private fun findExactClass(project: Project, qualifiedName: String): List<PsiClass> {
         val scope = GlobalSearchScope.projectScope(project)
         val psiClass = JavaPsiFacade.getInstance(project).findClass(qualifiedName, scope)
-        return if (psiClass != null) listOf(psiClass) else emptyList()
+        return if (psiClass != null && !isInnerClass(psiClass)) listOf(psiClass) else emptyList()
+    }
+
+    /**
+     * Checks if a class is an inner/nested class (has a containing class).
+     * Inner classes cannot be moved independently - they move with their outer class.
+     */
+    private fun isInnerClass(psiClass: PsiClass): Boolean {
+        return psiClass.containingClass != null
     }
 
     private fun findByGlobPattern(project: Project, pattern: String): List<PsiClass> {
@@ -93,7 +101,7 @@ object ClassResolver {
 
         AllClassesSearch.search(scope, project).forEach { psiClass ->
             val qualifiedName = psiClass.qualifiedName
-            if (qualifiedName != null && regex.matches(qualifiedName)) {
+            if (qualifiedName != null && regex.matches(qualifiedName) && !isInnerClass(psiClass)) {
                 matches.add(psiClass)
             }
         }

@@ -16,6 +16,10 @@ import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.psi.*
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.search.searches.AllClassesSearch
+import com.intellij.psi.search.searches.ReferencesSearch
+import com.intellij.psi.util.PsiUtil
 import com.intellij.refactoring.PackageWrapper
 import com.intellij.refactoring.move.moveClassesOrPackages.SingleSourceRootMoveDestination
 
@@ -46,6 +50,8 @@ class MoveOperation : Operation {
         val moveSpecs = specs.filterIsInstance<MoveSpec>()
         val results = mutableListOf<OperationResult>()
         val sourcePackages = mutableSetOf<String>()
+        // Track successful moves for stale import fixing: oldFqn -> newFqn
+        val movedClasses = mutableMapOf<String, String>()
 
         // Phase 1: Resolve all patterns (multi-pass)
         data class ResolvedEntry(val target: String, val pattern: String, val classes: List<PsiClass>)
@@ -109,6 +115,7 @@ class MoveOperation : Operation {
                         reporter.moveSuccess(sourceName, targetName)
                         results.add(OperationResult("move", sourceName, targetName, ResultStatus.SUCCESS))
                         moved = true
+                        movedClasses[sourceName] = targetName
                         break
                     } catch (e: Exception) {
                         if (IndexingHelper.isIndexNotReadyException(e) && attempt < 3) {
@@ -129,7 +136,17 @@ class MoveOperation : Operation {
             }
         }
 
-        // Phase 3: Cleanup empty packages
+        // Phase 3: Fix stale imports that weren't updated due to indexing issues
+        if (!dryRun && movedClasses.isNotEmpty()) {
+            fixStaleImports(project, movedClasses, reporter)
+        }
+
+        // Phase 4: Fix visibility issues for package-private members accessed from other packages
+        if (!dryRun && movedClasses.isNotEmpty()) {
+            fixVisibilityIssues(project, movedClasses, reporter)
+        }
+
+        // Phase 5: Cleanup empty packages
         if (!dryRun) {
             cleanupEmptyPackages(project, sourcePackages, reporter)
         }
@@ -171,6 +188,221 @@ class MoveOperation : Operation {
 
             VirtualFileManager.getInstance().syncRefresh()
         }
+    }
+
+    /**
+     * Fixes stale imports that weren't updated during the move due to indexing issues.
+     * This can happen when the project becomes non-compilable mid-execution.
+     *
+     * Scans all Java files in the project for imports that reference old (moved) class locations
+     * and updates them to point to the new locations.
+     */
+    private fun fixStaleImports(
+        project: Project,
+        movedClasses: Map<String, String>,
+        reporter: ProgressReporter
+    ) {
+        reporter.section("Fixing stale imports...")
+
+        var fixedCount = 0
+        val filesToProcess = mutableSetOf<PsiJavaFile>()
+
+        // Collect all Java files in the project
+        ApplicationManager.getApplication().invokeAndWait {
+            ReadAction.run<Exception> {
+                val scope = GlobalSearchScope.projectScope(project)
+                AllClassesSearch.search(scope, project).forEach { psiClass ->
+                    val file = psiClass.containingFile as? PsiJavaFile
+                    if (file != null) {
+                        filesToProcess.add(file)
+                    }
+                }
+            }
+        }
+
+        // Process each file looking for stale imports
+        ApplicationManager.getApplication().invokeAndWait {
+            WriteCommandAction.writeCommandAction(project).run<Exception> {
+                for (file in filesToProcess) {
+                    if (!file.isValid) continue
+
+                    val importList = file.importList ?: continue
+                    for (importStatement in importList.importStatements) {
+                        val importedFqn = importStatement.qualifiedName ?: continue
+
+                        // Check if this import references an old (moved) class
+                        val newFqn = movedClasses[importedFqn]
+                        if (newFqn != null) {
+                            // Found a stale import - update it
+                            try {
+                                val newImport = JavaPsiFacade.getElementFactory(project)
+                                    .createImportStatement(
+                                        JavaPsiFacade.getInstance(project)
+                                            .findClass(newFqn, GlobalSearchScope.projectScope(project))
+                                            ?: continue
+                                    )
+                                importStatement.replace(newImport)
+                                fixedCount++
+                            } catch (e: Exception) {
+                                System.err.println("  Warning: Could not fix import $importedFqn in ${file.name}: ${e.message}")
+                            }
+                        }
+                    }
+
+                    // Also check static imports
+                    for (staticImport in importList.importStaticStatements) {
+                        val importedFqn = staticImport.importReference?.qualifiedName ?: continue
+
+                        // For static imports, check if the class part matches a moved class
+                        for ((oldFqn, newFqn) in movedClasses) {
+                            if (importedFqn.startsWith("$oldFqn.")) {
+                                val memberName = importedFqn.removePrefix("$oldFqn.")
+                                val newStaticFqn = "$newFqn.$memberName"
+                                try {
+                                    val targetClass = JavaPsiFacade.getInstance(project)
+                                        .findClass(newFqn, GlobalSearchScope.projectScope(project))
+                                        ?: continue
+                                    val newStaticImport = JavaPsiFacade.getElementFactory(project)
+                                        .createImportStaticStatement(targetClass, memberName)
+                                    staticImport.replace(newStaticImport)
+                                    fixedCount++
+                                } catch (e: Exception) {
+                                    System.err.println("  Warning: Could not fix static import $importedFqn in ${file.name}: ${e.message}")
+                                }
+                                break
+                            }
+                        }
+                    }
+                }
+            }
+            VirtualFileManager.getInstance().syncRefresh()
+        }
+
+        if (fixedCount > 0) {
+            reporter.info("  Fixed $fixedCount stale import(s)")
+        } else {
+            reporter.info("  No stale imports found")
+        }
+    }
+
+    /**
+     * Fixes visibility issues where package-private members become inaccessible after moves.
+     *
+     * When a class is moved to a different package, callers that were in the same package
+     * can no longer access package-private members. This method finds such cases and
+     * changes the visibility to public.
+     */
+    private fun fixVisibilityIssues(
+        project: Project,
+        movedClasses: Map<String, String>,
+        reporter: ProgressReporter
+    ) {
+        reporter.section("Fixing visibility issues...")
+
+        var fixedCount = 0
+        val membersToFix = mutableSetOf<PsiModifierListOwner>()
+
+        // For each moved class, find package-private members that are used from other packages
+        ApplicationManager.getApplication().invokeAndWait {
+            ReadAction.run<Exception> {
+                val scope = GlobalSearchScope.projectScope(project)
+
+                for ((_, newFqn) in movedClasses) {
+                    val movedClass = JavaPsiFacade.getInstance(project).findClass(newFqn, scope)
+                        ?: continue
+
+                    val movedPackage = newFqn.substringBeforeLast('.', "")
+
+                    // Check the class itself if it's package-private
+                    if (isPackagePrivate(movedClass)) {
+                        if (hasUsagesFromOtherPackages(project, movedClass, movedPackage)) {
+                            membersToFix.add(movedClass)
+                        }
+                    }
+
+                    // Check all members (methods, fields, inner classes)
+                    for (method in movedClass.methods) {
+                        if (isPackagePrivate(method) && hasUsagesFromOtherPackages(project, method, movedPackage)) {
+                            membersToFix.add(method)
+                        }
+                    }
+
+                    for (field in movedClass.fields) {
+                        if (isPackagePrivate(field) && hasUsagesFromOtherPackages(project, field, movedPackage)) {
+                            membersToFix.add(field)
+                        }
+                    }
+
+                    for (innerClass in movedClass.innerClasses) {
+                        if (isPackagePrivate(innerClass) && hasUsagesFromOtherPackages(project, innerClass, movedPackage)) {
+                            membersToFix.add(innerClass)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fix visibility for all identified members
+        if (membersToFix.isNotEmpty()) {
+            ApplicationManager.getApplication().invokeAndWait {
+                WriteCommandAction.writeCommandAction(project).run<Exception> {
+                    for (member in membersToFix) {
+                        if (!member.isValid) continue
+                        try {
+                            PsiUtil.setModifierProperty(member, PsiModifier.PUBLIC, true)
+                            val memberName = when (member) {
+                                is PsiClass -> member.qualifiedName ?: member.name
+                                is PsiMethod -> "${member.containingClass?.name}.${member.name}()"
+                                is PsiField -> "${member.containingClass?.name}.${member.name}"
+                                else -> member.toString()
+                            }
+                            reporter.info("  Changed to public: $memberName")
+                            fixedCount++
+                        } catch (e: Exception) {
+                            System.err.println("  Warning: Could not fix visibility for $member: ${e.message}")
+                        }
+                    }
+                }
+                VirtualFileManager.getInstance().syncRefresh()
+            }
+        }
+
+        if (fixedCount > 0) {
+            reporter.info("  Fixed $fixedCount visibility issue(s)")
+        } else {
+            reporter.info("  No visibility issues found")
+        }
+    }
+
+    /**
+     * Checks if a member has package-private (default) visibility.
+     */
+    private fun isPackagePrivate(member: PsiModifierListOwner): Boolean {
+        val modifierList = member.modifierList ?: return true // No modifier list = package-private
+        return !modifierList.hasModifierProperty(PsiModifier.PUBLIC) &&
+                !modifierList.hasModifierProperty(PsiModifier.PROTECTED) &&
+                !modifierList.hasModifierProperty(PsiModifier.PRIVATE)
+    }
+
+    /**
+     * Checks if a member has usages from packages other than the specified one.
+     */
+    private fun hasUsagesFromOtherPackages(
+        project: Project,
+        member: PsiModifierListOwner,
+        memberPackage: String
+    ): Boolean {
+        val scope = GlobalSearchScope.projectScope(project)
+        val references = ReferencesSearch.search(member as PsiElement, scope).findAll()
+
+        for (reference in references) {
+            val referenceFile = reference.element.containingFile as? PsiJavaFile ?: continue
+            val referencePackage = referenceFile.packageName
+            if (referencePackage != memberPackage) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun cleanupEmptyPackages(project: Project, sourcePackages: Set<String>, reporter: ProgressReporter) {
