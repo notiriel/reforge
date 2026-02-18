@@ -1,6 +1,6 @@
 ---
 name: reforge
-description: Orchestrate large-scale Java/Kotlin refactorings using IntelliJ's refactoring engine. Analyzes codebase structure, generates refactoring config, and executes via headless IntelliJ plugin.
+description: Orchestrate large-scale Java/Kotlin refactorings using IntelliJ's refactoring engine. Operations execute in strict serial order, so each step sees the results of previous ones. Analyzes codebase structure, generates refactoring config, and executes via headless IntelliJ plugin.
 allowed-tools: Read, Grep, Glob, Bash, Write
 argument-hint: "[describe the refactoring goal]"
 ---
@@ -96,10 +96,12 @@ operations:
     with: com.example.app.task.port.TaskPort
 ```
 
-**Important ordering rules:**
+**Operations execute in strict serial order** — each operation completes fully before the next one begins. This means later operations see the results of earlier ones (moved classes, new interfaces, updated references). Use this to your advantage:
+
 - Move operations should come FIRST (so classes are in their target packages before extracting interfaces)
 - Extract-interface should come BEFORE replace-dependency (interface must exist before it can be used)
-- Consecutive same-type operations are batched automatically for efficiency
+- You can move a single class to a new package first, then move remaining classes to a different package — the second move sees the already-moved class in its new location
+- Consecutive same-type operations are batched automatically for efficiency, but different types always run sequentially
 
 **Always include test classes:** When moving a production class, include its corresponding test class in the same move operation. Reforge places test classes into the test source root automatically, so they can share the same `target` package. For example, if moving `TaskService` to `com.example.app.task.service`, also include `TaskServiceTest` as a source — it will end up in `src/test/java/com/example/app/task/service/`.
 
@@ -149,6 +151,25 @@ Tell the user:
 - Any failures and their causes
 
 ## Common Refactoring Patterns
+
+### Serial move — split a class out before moving the rest
+
+Because operations run in order, you can move a single class first, then use a wildcard to move the remaining classes to a different package. The wildcard in the second step won't match the already-moved class.
+
+```yaml
+operations:
+  # Step 1: Move GlobalExceptionHandler to common — runs first
+  - type: move
+    target: com.example.app.common.exception
+    sources:
+      - com.example.app.exception.GlobalExceptionHandler
+
+  # Step 2: Move remaining exception classes to task — sees GlobalExceptionHandler already gone
+  - type: move
+    target: com.example.app.task.exception
+    sources:
+      - com.example.app.exception.*
+```
 
 ### Package reorganization (flat -> domain-grouped)
 

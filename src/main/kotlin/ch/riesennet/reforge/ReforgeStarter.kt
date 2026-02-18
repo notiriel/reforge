@@ -8,8 +8,11 @@ import ch.riesennet.reforge.operation.OperationResult
 import ch.riesennet.reforge.operation.ResultStatus
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ApplicationStarter
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.search.searches.AllClassesSearch
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -127,6 +130,23 @@ class ReforgeStarter : ApplicationStarter {
                 }
             }
 
+            // Collect untouched classes for dry-run reporting
+            var untouchedClasses = emptySet<String>()
+            var totalClassCount = 0
+            if (args.dryRun) {
+                val allClassNames = collectProjectClassNames(project)
+                totalClassCount = allClassNames.size
+                val touchedClasses = allResults.map { it.source }.toSet()
+                untouchedClasses = allClassNames - touchedClasses
+
+                if (untouchedClasses.isNotEmpty()) {
+                    reporter.section("Untouched classes:")
+                    for (className in untouchedClasses.sorted()) {
+                        reporter.info("  $className")
+                    }
+                }
+            }
+
             // Print summary
             reporter.section("Summary:")
             val successCount = allResults.count { it.status == ResultStatus.SUCCESS }
@@ -135,6 +155,9 @@ class ReforgeStarter : ApplicationStarter {
             reporter.info("  Succeeded: $successCount")
             reporter.info("  Failed: $failedCount")
             reporter.info("  Skipped: $skippedCount")
+            if (args.dryRun) {
+                reporter.info("  Untouched: ${untouchedClasses.size} of $totalClassCount classes")
+            }
 
             val failures = allResults.filter { it.status == ResultStatus.FAILED }
             if (failures.isNotEmpty()) {
@@ -177,6 +200,21 @@ class ReforgeStarter : ApplicationStarter {
         batches.add(Batch(currentType, currentEntries))
 
         return batches
+    }
+
+    private fun collectProjectClassNames(project: Project): Set<String> {
+        val classNames = mutableSetOf<String>()
+        ApplicationManager.getApplication().invokeAndWait {
+            ReadAction.run<Exception> {
+                val scope = GlobalSearchScope.projectScope(project)
+                AllClassesSearch.search(scope, project).forEach { psiClass ->
+                    if (psiClass.containingClass == null) {
+                        psiClass.qualifiedName?.let { classNames.add(it) }
+                    }
+                }
+            }
+        }
+        return classNames
     }
 
     private fun openProject(projectFile: File): Project {
