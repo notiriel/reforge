@@ -27,7 +27,7 @@ class HeadlessMoveProcessor(
 ) : MoveClassesOrPackagesProcessor(
     project, classes, destination, searchInComments, searchTextOccurrences, moveCallback
 ) {
-    fun findAndExecute() {
+    fun findAndExecute(affectedFilesAccumulator: MutableSet<PsiJavaFile>? = null) {
         val usages = findUsages()
 
         // Collect affected Java files before the move
@@ -35,8 +35,12 @@ class HeadlessMoveProcessor(
 
         execute(usages)
 
-        // Optimize imports in affected files to resolve duplicate import conflicts
-        optimizeImportsInAffectedFiles(affectedFiles)
+        if (affectedFilesAccumulator != null) {
+            // Defer import optimization — caller will run it after all moves
+            affectedFilesAccumulator.addAll(affectedFiles)
+        } else {
+            optimizeImportsInAffectedFiles(affectedFiles)
+        }
     }
 
     /**
@@ -57,7 +61,7 @@ class HeadlessMoveProcessor(
      * Runs optimizeImports on all affected files to resolve duplicate import conflicts.
      * This handles the case where a moved class has the same simple name as an existing import.
      */
-    private fun optimizeImportsInAffectedFiles(files: Set<PsiJavaFile>) {
+    internal fun optimizeImportsInAffectedFiles(files: Set<PsiJavaFile>) {
         if (files.isEmpty()) return
 
         val codeStyleManager = JavaCodeStyleManager.getInstance(myProject)

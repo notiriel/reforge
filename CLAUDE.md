@@ -306,3 +306,27 @@ Then use in any project:
 ```
 
 The skill analyzes the codebase, generates YAML config, executes Reforge, and validates with tests.
+
+### Releasing
+
+Three files carry the version and must be updated together:
+
+1. `build.gradle.kts` — `version = "X.Y.Z"` (drives the built zip filename and patched `plugin.xml`)
+2. `updatePlugins.xml` — `version="X.Y.Z"` (IntelliJ custom plugin repository descriptor)
+
+Release steps:
+
+```bash
+# 1. Bump version in build.gradle.kts and updatePlugins.xml
+# 2. Clean build
+./gradlew clean buildPlugin
+# 3. Commit, push
+git add build.gradle.kts updatePlugins.xml <other changed files>
+git commit -m "Bump version to X.Y.Z"
+git push origin main
+# 4. Create GitHub release with the plugin zip (asset must be named reforge.zip)
+gh release create vX.Y.Z build/distributions/reforge-X.Y.Z.zip#reforge.zip \
+  --title "vX.Y.Z" --notes "Release notes here"
+```
+
+The `updatePlugins.xml` points to `releases/latest/download/reforge.zip`, so naming the asset `reforge.zip` (via `#reforge.zip` suffix) is required for existing installations to auto-discover updates.

@@ -15,6 +15,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
+import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.AllClassesSearch
@@ -80,6 +81,7 @@ class MoveOperation : Operation {
 
         // Phase 2: Execute all moves
         val byTarget = resolved.groupBy { it.target }
+        val allAffectedFiles = mutableSetOf<PsiJavaFile>()
 
         for ((targetPackage, entries) in byTarget) {
             reporter.section("Moving to $targetPackage:")
@@ -111,7 +113,7 @@ class MoveOperation : Operation {
                 for (attempt in 1..3) {
                     try {
                         DumbService.getInstance(project).waitForSmartMode()
-                        moveClass(project, psiClass, targetPackage)
+                        moveClass(project, psiClass, targetPackage, allAffectedFiles)
                         reporter.moveSuccess(sourceName, targetName)
                         results.add(OperationResult("move", sourceName, targetName, ResultStatus.SUCCESS))
                         moved = true
@@ -136,6 +138,32 @@ class MoveOperation : Operation {
             }
         }
 
+        // Phase 2.5: Optimize imports in all affected files (deferred from individual moves)
+        if (!dryRun && allAffectedFiles.isNotEmpty()) {
+            reporter.section("Optimizing imports in affected files...")
+            IndexingHelper.waitForSmartMode(project)
+            ApplicationManager.getApplication().invokeAndWait {
+                val codeStyleManager = com.intellij.psi.codeStyle.JavaCodeStyleManager.getInstance(project)
+                WriteCommandAction.writeCommandAction(project).run<Exception> {
+                    for (file in allAffectedFiles) {
+                        if (!file.isValid) continue
+                        try {
+                            codeStyleManager.optimizeImports(file)
+                        } catch (e: Exception) {
+                            System.err.println("  Warning: Could not optimize imports in ${file.name}: ${e.message}")
+                        }
+                    }
+                }
+                VirtualFileManager.getInstance().syncRefresh()
+            }
+            reporter.info("  Optimized imports in ${allAffectedFiles.count { it.isValid }} file(s)")
+        }
+
+        // Phase 2.75: Infer MapStruct *Impl moves
+        if (!dryRun && movedClasses.isNotEmpty()) {
+            inferGeneratedClassMoves(project, movedClasses, reporter)
+        }
+
         // Phase 3: Fix stale imports that weren't updated due to indexing issues
         if (!dryRun && movedClasses.isNotEmpty()) {
             fixStaleImports(project, movedClasses, reporter)
@@ -154,7 +182,12 @@ class MoveOperation : Operation {
         return results
     }
 
-    private fun moveClass(project: Project, psiClass: PsiClass, targetPackage: String) {
+    private fun moveClass(
+        project: Project,
+        psiClass: PsiClass,
+        targetPackage: String,
+        affectedFilesAccumulator: MutableSet<PsiJavaFile>? = null
+    ) {
         ApplicationManager.getApplication().invokeAndWait {
             val targetDirectory = WriteCommandAction.writeCommandAction(project)
                 .compute<PsiDirectory, Exception> {
@@ -184,9 +217,44 @@ class MoveOperation : Operation {
             )
 
             processor.setPreviewUsages(false)
-            processor.findAndExecute()
+            processor.findAndExecute(affectedFilesAccumulator)
 
             VirtualFileManager.getInstance().syncRefresh()
+        }
+    }
+
+    /**
+     * Infers virtual move entries for generated classes (e.g. MapStruct *Impl).
+     * These classes aren't in the source tree but their imports still need fixing.
+     */
+    private fun inferGeneratedClassMoves(
+        project: Project,
+        movedClasses: MutableMap<String, String>,
+        reporter: ProgressReporter
+    ) {
+        reporter.section("Inferring generated class moves...")
+
+        val mapperFqns = mutableSetOf<String>()
+
+        ApplicationManager.getApplication().invokeAndWait {
+            ReadAction.run<Exception> {
+                val scope = GlobalSearchScope.projectScope(project)
+                for ((_, newFqn) in movedClasses) {
+                    val psiClass = JavaPsiFacade.getInstance(project).findClass(newFqn, scope)
+                        ?: continue
+                    if (psiClass.annotations.any { it.qualifiedName == "org.mapstruct.Mapper" }) {
+                        mapperFqns.add(newFqn)
+                    }
+                }
+            }
+        }
+
+        val inferred = ImportFixHelper.inferMapperImplMoves(movedClasses, mapperFqns)
+        if (inferred.isNotEmpty()) {
+            movedClasses.putAll(inferred)
+            reporter.info("  Inferred ${inferred.size} MapStruct Impl move(s)")
+        } else {
+            reporter.info("  No generated class moves inferred")
         }
     }
 
@@ -194,8 +262,10 @@ class MoveOperation : Operation {
      * Fixes stale imports that weren't updated during the move due to indexing issues.
      * This can happen when the project becomes non-compilable mid-execution.
      *
-     * Scans all Java files in the project for imports that reference old (moved) class locations
-     * and updates them to point to the new locations.
+     * Uses three strategies:
+     * 1. Exact-match: import FQN found in movedClasses map (with text-based fallback)
+     * 2. Package-rename fallback: infer new FQN from package rename patterns
+     * 3. Static imports: match class portion against movedClasses
      */
     private fun fixStaleImports(
         project: Project,
@@ -220,28 +290,37 @@ class MoveOperation : Operation {
             }
         }
 
+        val packageRenameMap = ImportFixHelper.buildPackageRenameMap(movedClasses)
+
         // Process each file looking for stale imports
         ApplicationManager.getApplication().invokeAndWait {
             WriteCommandAction.writeCommandAction(project).run<Exception> {
+                val scope = GlobalSearchScope.projectScope(project)
+
                 for (file in filesToProcess) {
                     if (!file.isValid) continue
 
                     val importList = file.importList ?: continue
+                    val fixedImports = mutableSetOf<String>()
+
+                    // Pass 1: Exact-match with text-based fallback
                     for (importStatement in importList.importStatements) {
                         val importedFqn = importStatement.qualifiedName ?: continue
 
-                        // Check if this import references an old (moved) class
                         val newFqn = movedClasses[importedFqn]
                         if (newFqn != null) {
-                            // Found a stale import - update it
                             try {
-                                val newImport = JavaPsiFacade.getElementFactory(project)
-                                    .createImportStatement(
-                                        JavaPsiFacade.getInstance(project)
-                                            .findClass(newFqn, GlobalSearchScope.projectScope(project))
-                                            ?: continue
-                                    )
-                                importStatement.replace(newImport)
+                                val targetClass = JavaPsiFacade.getInstance(project).findClass(newFqn, scope)
+                                if (targetClass != null) {
+                                    val newImport = JavaPsiFacade.getElementFactory(project)
+                                        .createImportStatement(targetClass)
+                                    importStatement.replace(newImport)
+                                } else {
+                                    // Text-based fallback when class not in index (e.g. generated code)
+                                    replaceImportTextually(project, importStatement, newFqn)
+                                    System.err.println("  Warning: Class $newFqn not found in index, fixed import textually")
+                                }
+                                fixedImports.add(importedFqn)
                                 fixedCount++
                             } catch (e: Exception) {
                                 System.err.println("  Warning: Could not fix import $importedFqn in ${file.name}: ${e.message}")
@@ -249,23 +328,62 @@ class MoveOperation : Operation {
                         }
                     }
 
-                    // Also check static imports
+                    // Pass 2: Package-rename fallback for unresolved imports
+                    for (importStatement in importList.importStatements) {
+                        val importedFqn = importStatement.qualifiedName ?: continue
+                        if (importedFqn in fixedImports) continue
+
+                        // Skip if the import is still valid
+                        if (JavaPsiFacade.getInstance(project).findClass(importedFqn, scope) != null) continue
+
+                        val candidates = ImportFixHelper.resolveViaPackageRename(importedFqn, packageRenameMap)
+                        if (candidates.isEmpty()) continue
+
+                        try {
+                            if (candidates.size == 1) {
+                                val candidateFqn = candidates.single()
+                                replaceImportTextually(project, importStatement, candidateFqn)
+                                fixedCount++
+                                System.err.println("  Fixed by package rename: $importedFqn → $candidateFqn")
+                            } else {
+                                // Multiple candidates — try to resolve each
+                                val resolved = candidates.firstOrNull { candidateFqn ->
+                                    JavaPsiFacade.getInstance(project).findClass(candidateFqn, scope) != null
+                                }
+                                if (resolved != null) {
+                                    val targetClass = JavaPsiFacade.getInstance(project).findClass(resolved, scope)!!
+                                    val newImport = JavaPsiFacade.getElementFactory(project)
+                                        .createImportStatement(targetClass)
+                                    importStatement.replace(newImport)
+                                    fixedCount++
+                                    System.err.println("  Fixed by package rename: $importedFqn → $resolved")
+                                } else {
+                                    System.err.println("  Warning: Multiple candidates for $importedFqn but none resolved: $candidates")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            System.err.println("  Warning: Could not fix import $importedFqn via package rename in ${file.name}: ${e.message}")
+                        }
+                    }
+
+                    // Pass 3: Static imports
                     for (staticImport in importList.importStaticStatements) {
                         val importedFqn = staticImport.importReference?.qualifiedName ?: continue
 
-                        // For static imports, check if the class part matches a moved class
                         for ((oldFqn, newFqn) in movedClasses) {
                             if (importedFqn.startsWith("$oldFqn.")) {
                                 val memberName = importedFqn.removePrefix("$oldFqn.")
-                                val newStaticFqn = "$newFqn.$memberName"
                                 try {
                                     val targetClass = JavaPsiFacade.getInstance(project)
-                                        .findClass(newFqn, GlobalSearchScope.projectScope(project))
-                                        ?: continue
-                                    val newStaticImport = JavaPsiFacade.getElementFactory(project)
-                                        .createImportStaticStatement(targetClass, memberName)
-                                    staticImport.replace(newStaticImport)
-                                    fixedCount++
+                                        .findClass(newFqn, scope)
+                                    if (targetClass != null) {
+                                        val newStaticImport = JavaPsiFacade.getElementFactory(project)
+                                            .createImportStaticStatement(targetClass, memberName)
+                                        staticImport.replace(newStaticImport)
+                                        fixedCount++
+                                    } else {
+                                        System.err.println("  Warning: Class $newFqn not found for static import fix")
+                                    }
                                 } catch (e: Exception) {
                                     System.err.println("  Warning: Could not fix static import $importedFqn in ${file.name}: ${e.message}")
                                 }
@@ -283,6 +401,19 @@ class MoveOperation : Operation {
         } else {
             reporter.info("  No stale imports found")
         }
+    }
+
+    /**
+     * Replaces an import statement textually, without requiring the target class to exist in the index.
+     * Used for generated classes (MapStruct Impl, etc.) that aren't in source.
+     */
+    private fun replaceImportTextually(project: Project, importStatement: PsiImportStatement, newFqn: String) {
+        val importText = "import $newFqn;"
+        val dummyFile = PsiFileFactory.getInstance(project)
+            .createFileFromText("Dummy.java", JavaFileType.INSTANCE, "package dummy;\n$importText\nclass Dummy {}")
+        val newImport = (dummyFile as PsiJavaFile).importList?.importStatements?.firstOrNull()
+            ?: throw IllegalStateException("Failed to create import statement for $newFqn")
+        importStatement.replace(newImport)
     }
 
     /**
