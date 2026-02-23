@@ -166,6 +166,8 @@ src/test/kotlin/ch/riesennet/reforge/
 
 A Spring Boot test project exists at `src/test/resources/test-project/` and at `~/development/test-project/` for end-to-end testing. It is a task manager backend with 24 Java source classes and 7 test classes across 8 packages with 51 JUnit 5 tests.
 
+**Maintaining E2E coverage:** When a bug is fixed, add classes to the test project that exercise the same failure mode. Translate the bug scenario into the task-manager domain — do not use class or package names from the original bug report. The goal is regression coverage: if the fix breaks, the E2E refactoring should produce compile errors or test failures.
+
 ### Test Dependencies
 
 - JUnit Jupiter 5.11.4
