@@ -73,3 +73,13 @@ operations:
     target: com.example.taskmanager.common.service
     sources:
       - com.example.taskmanager.service.ReportService
+  - type: move
+    target: com.example.taskmanager.task.service
+    sources:
+      - com.example.taskmanager.service.TaskAssignmentService
+
+  # Catch-all for remaining service classes (exercises wildcard/specific conflict dedup)
+  - type: move
+    target: com.example.taskmanager.common.service
+    sources:
+      - com.example.taskmanager.service.*

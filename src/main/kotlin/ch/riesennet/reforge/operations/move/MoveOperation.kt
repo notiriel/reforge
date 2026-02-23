@@ -79,6 +79,26 @@ class MoveOperation : Operation {
             if (unresolvedCount == 0) break
         }
 
+        // Phase 1.5: Deduplicate — first match wins
+        val claimed = mutableMapOf<String, String>() // FQN → target that claimed it
+        resolved = resolved.map { entry ->
+            val deduplicated = entry.classes.filter { psiClass ->
+                val fqn = ReadAction.compute<String?, Exception> { psiClass.qualifiedName } ?: return@filter false
+                val existingTarget = claimed[fqn]
+                if (existingTarget == null) {
+                    claimed[fqn] = entry.target
+                    true
+                } else if (existingTarget == entry.target) {
+                    // Same target — skip silently (duplicate within same target is harmless but wasteful)
+                    false
+                } else {
+                    reporter.moveSkipped(fqn, "already claimed for $existingTarget")
+                    false
+                }
+            }
+            entry.copy(classes = deduplicated)
+        }
+
         // Phase 2: Execute all moves
         val byTarget = resolved.groupBy { it.target }
         val allAffectedFiles = mutableSetOf<PsiJavaFile>()
