@@ -164,9 +164,29 @@ src/test/kotlin/ch/riesennet/reforge/
 
 ### E2E Test
 
-A Spring Boot test project exists at `src/test/resources/test-project/` and at `~/development/test-project/` for end-to-end testing. It is a task manager backend with 24 Java source classes and 7 test classes across 8 packages with 51 JUnit 5 tests.
+E2E testing is **manual** — there is no automated E2E test harness. IntelliJ's `PathClassLoader` prevents JaCoCo/Kover instrumentation of `runIde`, and the plugin requires a full IntelliJ sandbox to exercise PSI operations, move refactoring, and import fixing.
+
+**Setup:** The E2E test project exists in two locations:
+
+1. **Canonical copy** — `src/test/resources/test-project/` (checked into this repo, source of truth)
+2. **Working copy** — `~/development/test-project/` (a separate Git repo used for running E2E tests)
+
+The working copy is a standalone Git repo so it can be reset with `git checkout`/`git clean` between runs. Keep both copies in sync: edit the canonical copy, then copy changes to the working copy before running E2E tests.
+
+**What it covers:** `Operation.execute()` implementations, `HeadlessMoveProcessor`, infrastructure classes (`ProjectSetup`, `VfsHelper`, `IndexingHelper`), `ReforgeStarter.run()`/`openProject()`/`closeProject()`, stale import fixing, visibility fixing, wildcard/specific deduplication.
+
+**What to verify after a run:**
+- Reforge output: expected move/skip/fail counts, no errors
+- `mvn clean verify` in the test project: all 51 tests pass, no compilation errors
+- Structure: classes end up in the correct target packages
 
 **Maintaining E2E coverage:** When a bug is fixed, add classes to the test project that exercise the same failure mode. Translate the bug scenario into the task-manager domain — do not use class or package names from the original bug report. The goal is regression coverage: if the fix breaks, the E2E refactoring should produce compile errors or test failures.
+
+**Regression scenarios currently covered:**
+- Import preservation with heavy `java.util.*` usage (ReportService)
+- MapStruct `@Mapper` annotation handling (TaskMapper, ProjectMapper)
+- Cross-domain dependencies (ReportService referencing multiple domains)
+- Wildcard/specific conflict deduplication (TaskAssignmentService claimed by specific rule, then matched again by `service.*` catch-all)
 
 ### Test Dependencies
 
@@ -208,23 +228,29 @@ Wildcards (move only): `*` matches within a segment, `**` matches zero or more p
 
 ## Test Project
 
-A Spring Boot test project exists at `~/development/test-project/` for end-to-end testing. It is a task manager backend with 24 Java source classes and 7 test classes across 8 packages with 51 JUnit 5 tests.
+A Spring Boot test project exists at `~/development/test-project/` for end-to-end testing. It is a task manager backend with 25 Java source classes and 7 test classes across 8 packages with 51 JUnit 5 tests.
 
 ### Running an end-to-end test
 
 ```bash
-# 1. Reset the test project
+# 1. Sync canonical copy to working copy (if test-project files changed)
+cp -r src/test/resources/test-project/src/ ~/development/test-project/src/
+cp src/test/resources/test-project/refactor.yaml ~/development/test-project/refactor.yaml
+
+# 2. Reset the working copy to a clean state
 cd ~/development/test-project
 git checkout -- src/ && git clean -fd src/
 git checkout refactor.yaml
 
-# 2. Build and run Reforge
-cd ~/development/intellij-batch-mover
-gradle buildPlugin && gradle runIde --args="reforge /Users/stefan/development/test-project /Users/stefan/development/test-project/refactor.yaml"
+# 3. Build and run Reforge
+cd <reforge-project-dir>
+gradle buildPlugin && gradle runIde --args="reforge ~/development/test-project ~/development/test-project/refactor.yaml"
 
-# 3. Verify: expect 30 moved (23 source + 7 test), 0 failed, 8 packages removed
+# 4. Verify output:
+#    - 32 moved (25 source + 7 test), 0 failed, 4 skipped (dedup), 8 packages removed
+#    - "already claimed" messages for deduped wildcard matches
 
-# 4. Run tests on the refactored project
+# 5. Run tests on the refactored project
 cd ~/development/test-project
 mvn clean verify
 # Expect: Tests run: 51, Failures: 0, Errors: 0
@@ -243,7 +269,8 @@ src/main/java/com.example.taskmanager
   ├── mapper/          TaskMapper, ProjectMapper
   ├── model/           Task, TaskStatus, TaskPriority, Project
   ├── repository/      TaskRepository, ProjectRepository
-  └── service/         TaskService, ProjectService, ReportService
+  └── service/         TaskService, ProjectService, ReportService,
+                       TaskAssignmentService
 
 src/test/java/com.example.taskmanager
   ├── controller/      TaskControllerTest, ProjectControllerTest
@@ -259,7 +286,7 @@ src/main/java/com.example.taskmanager
   ├── task/
   │   ├── model/       Task, TaskStatus, TaskPriority
   │   ├── repository/  TaskRepository
-  │   ├── service/     TaskService
+  │   ├── service/     TaskService, TaskAssignmentService
   │   ├── controller/  TaskController
   │   ├── dto/         CreateTaskRequest, TaskResponse, UpdateTaskRequest
   │   ├── exception/   TaskNotFoundException, DependencyNotMetException
