@@ -164,7 +164,7 @@ src/test/kotlin/ch/riesennet/reforge/
 
 ### E2E Test
 
-A Spring Boot test project exists at `src/test/resources/test-project/` and at `~/development/test-project/` for end-to-end testing. It is a task manager backend with 21 Java source classes and 5 test classes across 7 packages with 46 JUnit 5 tests.
+A Spring Boot test project exists at `src/test/resources/test-project/` and at `~/development/test-project/` for end-to-end testing. It is a task manager backend with 24 Java source classes and 7 test classes across 8 packages with 51 JUnit 5 tests.
 
 ### Test Dependencies
 
@@ -206,7 +206,7 @@ Wildcards (move only): `*` matches within a segment, `**` matches zero or more p
 
 ## Test Project
 
-A Spring Boot test project exists at `~/development/test-project/` for end-to-end testing. It is a task manager backend with 21 Java source classes and 5 test classes across 7 packages with 46 JUnit 5 tests.
+A Spring Boot test project exists at `~/development/test-project/` for end-to-end testing. It is a task manager backend with 24 Java source classes and 7 test classes across 8 packages with 51 JUnit 5 tests.
 
 ### Running an end-to-end test
 
@@ -220,12 +220,12 @@ git checkout refactor.yaml
 cd ~/development/intellij-batch-mover
 gradle buildPlugin && gradle runIde --args="reforge /Users/stefan/development/test-project /Users/stefan/development/test-project/refactor.yaml"
 
-# 3. Verify: expect 25 moved (20 source + 5 test), 0 failed, 7 packages removed
+# 3. Verify: expect 30 moved (23 source + 7 test), 0 failed, 8 packages removed
 
 # 4. Run tests on the refactored project
 cd ~/development/test-project
 mvn clean verify
-# Expect: Tests run: 46, Failures: 0, Errors: 0
+# Expect: Tests run: 51, Failures: 0, Errors: 0
 ```
 
 ### Test project structure (original)
@@ -238,14 +238,16 @@ src/main/java/com.example.taskmanager
   │                    CreateProjectRequest, ProjectResponse
   ├── exception/       TaskNotFoundException, DependencyNotMetException,
   │                    ProjectNotFoundException, GlobalExceptionHandler
+  ├── mapper/          TaskMapper, ProjectMapper
   ├── model/           Task, TaskStatus, TaskPriority, Project
   ├── repository/      TaskRepository, ProjectRepository
-  └── service/         TaskService, ProjectService
+  └── service/         TaskService, ProjectService, ReportService
 
 src/test/java/com.example.taskmanager
   ├── controller/      TaskControllerTest, ProjectControllerTest
+  ├── mapper/          TaskMapperTest
   ├── repository/      TaskRepositoryTest
-  └── service/         TaskServiceTest, ProjectServiceTest
+  └── service/         TaskServiceTest, ProjectServiceTest, ReportServiceTest
 ```
 
 ### Test project structure (after refactoring)
@@ -258,26 +260,32 @@ src/main/java/com.example.taskmanager
   │   ├── service/     TaskService
   │   ├── controller/  TaskController
   │   ├── dto/         CreateTaskRequest, TaskResponse, UpdateTaskRequest
-  │   └── exception/   TaskNotFoundException, DependencyNotMetException
+  │   ├── exception/   TaskNotFoundException, DependencyNotMetException
+  │   └── mapper/      TaskMapper
   ├── project/
   │   ├── model/       Project
   │   ├── repository/  ProjectRepository
   │   ├── service/     ProjectService
   │   ├── controller/  ProjectController
   │   ├── dto/         CreateProjectRequest, ProjectResponse
-  │   └── exception/   ProjectNotFoundException
+  │   ├── exception/   ProjectNotFoundException
+  │   └── mapper/      ProjectMapper
   └── common/
       ├── exception/   GlobalExceptionHandler
-      └── config/      DataInitializer
+      ├── config/      DataInitializer
+      └── service/     ReportService
 
 src/test/java/com.example.taskmanager
   ├── task/
   │   ├── repository/  TaskRepositoryTest
   │   ├── service/     TaskServiceTest
-  │   └── controller/  TaskControllerTest
-  └── project/
-      ├── service/     ProjectServiceTest
-      └── controller/  ProjectControllerTest
+  │   ├── controller/  TaskControllerTest
+  │   └── mapper/      TaskMapperTest
+  ├── project/
+  │   ├── service/     ProjectServiceTest
+  │   └── controller/  ProjectControllerTest
+  └── common/
+      └── service/     ReportServiceTest
 ```
 
 ## Claude Code Plugin

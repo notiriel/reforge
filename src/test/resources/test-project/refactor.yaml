@@ -25,6 +25,10 @@ operations:
     sources:
       - com.example.taskmanager.exception.TaskNotFoundException
       - com.example.taskmanager.exception.DependencyNotMetException
+  - type: move
+    target: com.example.taskmanager.task.mapper
+    sources:
+      - com.example.taskmanager.mapper.Task*
 
   # Project domain
   - type: move
@@ -51,6 +55,10 @@ operations:
     target: com.example.taskmanager.project.exception
     sources:
       - com.example.taskmanager.exception.ProjectNotFoundException
+  - type: move
+    target: com.example.taskmanager.project.mapper
+    sources:
+      - com.example.taskmanager.mapper.Project*
 
   # Common/shared
   - type: move
@@ -61,3 +69,7 @@ operations:
     target: com.example.taskmanager.common.config
     sources:
       - com.example.taskmanager.config.DataInitializer
+  - type: move
+    target: com.example.taskmanager.common.service
+    sources:
+      - com.example.taskmanager.service.ReportService
