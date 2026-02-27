@@ -78,6 +78,22 @@ operations:
     sources:
       - com.example.taskmanager.service.TaskAssignmentService
 
+  # Exact FQN for scheduling sub-package (regression: exact FQN resolution + wildcard catch-all)
+  - type: move
+    target: com.example.taskmanager.task.scheduling
+    sources:
+      - com.example.taskmanager.service.scheduling.TaskDeadlineScheduler
+  - type: move
+    target: com.example.taskmanager.project.scheduling
+    sources:
+      - com.example.taskmanager.service.scheduling.ProjectMilestoneTracker
+
+  # Catch-all for remaining scheduling classes
+  - type: move
+    target: com.example.taskmanager.common.scheduling
+    sources:
+      - com.example.taskmanager.service.scheduling.*
+
   # Catch-all for remaining service classes (exercises wildcard/specific conflict dedup)
   - type: move
     target: com.example.taskmanager.common.service

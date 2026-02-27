@@ -82,8 +82,21 @@ object ClassResolver {
 
     private fun findExactClass(project: Project, qualifiedName: String): List<PsiClass> {
         val scope = GlobalSearchScope.projectScope(project)
+
+        // Primary: stub-index lookup (fast)
         val psiClass = JavaPsiFacade.getInstance(project).findClass(qualifiedName, scope)
-        return if (psiClass != null && !isInnerClass(psiClass)) listOf(psiClass) else emptyList()
+        if (psiClass != null && !isInnerClass(psiClass)) return listOf(psiClass)
+
+        // Fallback: AllClassesSearch scan (slower but reliable when stub index is incomplete)
+        // This handles headless mode with large projects where JavaPsiFacade.findClass()
+        // can return null even after waitForSmartMode().
+        val matches = mutableListOf<PsiClass>()
+        AllClassesSearch.search(scope, project).forEach { candidate ->
+            if (candidate.qualifiedName == qualifiedName && !isInnerClass(candidate)) {
+                matches.add(candidate)
+            }
+        }
+        return matches
     }
 
     /**

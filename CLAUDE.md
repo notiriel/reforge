@@ -173,11 +173,11 @@ E2E testing is **manual** — there is no automated E2E test harness. IntelliJ's
 
 The working copy is a standalone Git repo so it can be reset with `git checkout`/`git clean` between runs. Keep both copies in sync: edit the canonical copy, then copy changes to the working copy before running E2E tests.
 
-**What it covers:** `Operation.execute()` implementations, `HeadlessMoveProcessor`, infrastructure classes (`ProjectSetup`, `VfsHelper`, `IndexingHelper`), `ReforgeStarter.run()`/`openProject()`/`closeProject()`, stale import fixing, visibility fixing, wildcard/specific deduplication.
+**What it covers:** `Operation.execute()` implementations, `HeadlessMoveProcessor`, infrastructure classes (`ProjectSetup`, `VfsHelper`, `IndexingHelper`), `ReforgeStarter.run()`/`openProject()`/`closeProject()`, stale import fixing, missing import fixing for same-package splits, visibility fixing, wildcard/specific deduplication.
 
 **What to verify after a run:**
 - Reforge output: expected move/skip/fail counts, no errors
-- `mvn clean verify` in the test project: all 51 tests pass, no compilation errors
+- `mvn clean verify` in the test project: all 56 tests pass, no compilation errors
 - Structure: classes end up in the correct target packages
 
 **Maintaining E2E coverage:** When a bug is fixed, add classes to the test project that exercise the same failure mode. Translate the bug scenario into the task-manager domain — do not use class or package names from the original bug report. The goal is regression coverage: if the fix breaks, the E2E refactoring should produce compile errors or test failures.
@@ -187,6 +187,8 @@ The working copy is a standalone Git repo so it can be reset with `git checkout`
 - MapStruct `@Mapper` annotation handling (TaskMapper, ProjectMapper)
 - Cross-domain dependencies (ReportService referencing multiple domains)
 - Wildcard/specific conflict deduplication (TaskAssignmentService claimed by specific rule, then matched again by `service.*` catch-all)
+- Exact FQN resolution with sub-package wildcard catch-all (TaskDeadlineScheduler, ProjectMilestoneTracker claimed by exact FQN, then matched again by `service.scheduling.*` catch-all — package assertion test catches wrong placement)
+- Same-package split imports (Task↔Project cross-references, GlobalExceptionHandler↔exception classes — all were same-package, now different packages)
 
 ### Test Dependencies
 
@@ -228,7 +230,7 @@ Wildcards (move only): `*` matches within a segment, `**` matches zero or more p
 
 ## Test Project
 
-A Spring Boot test project exists at `~/development/test-project/` for end-to-end testing. It is a task manager backend with 25 Java source classes and 7 test classes across 8 packages with 51 JUnit 5 tests.
+A Spring Boot test project exists at `~/development/test-project/` for end-to-end testing. It is a task manager backend with 28 Java source classes and 8 test classes across 9 packages with 56 JUnit 5 tests.
 
 ### Running an end-to-end test
 
@@ -247,13 +249,15 @@ cd <reforge-project-dir>
 gradle buildPlugin && gradle runIde --args="reforge ~/development/test-project ~/development/test-project/refactor.yaml"
 
 # 4. Verify output:
-#    - 32 moved (25 source + 7 test), 0 failed, 4 skipped (dedup), 8 packages removed
-#    - "already claimed" messages for deduped wildcard matches
+#    - 35 moved (28 source + 8 test - 1 TaskManagerApplication), 0 failed, 0 skipped
+#    - 7 "already claimed" dedup messages (scheduling + service catch-alls)
+#    - 8 missing imports added for same-package splits
+#    - 3 packages removed (model, exception, config)
 
 # 5. Run tests on the refactored project
 cd ~/development/test-project
 mvn clean verify
-# Expect: Tests run: 51, Failures: 0, Errors: 0
+# Expect: Tests run: 56, Failures: 0, Errors: 0
 ```
 
 ### Test project structure (original)
@@ -269,14 +273,19 @@ src/main/java/com.example.taskmanager
   ├── mapper/          TaskMapper, ProjectMapper
   ├── model/           Task, TaskStatus, TaskPriority, Project
   ├── repository/      TaskRepository, ProjectRepository
-  └── service/         TaskService, ProjectService, ReportService,
-                       TaskAssignmentService
+  ├── service/         TaskService, ProjectService, ReportService,
+  │                    TaskAssignmentService
+  └── service/
+      └── scheduling/  TaskDeadlineScheduler, ProjectMilestoneTracker,
+                       SchedulingUtils
 
 src/test/java/com.example.taskmanager
   ├── controller/      TaskControllerTest, ProjectControllerTest
   ├── mapper/          TaskMapperTest
   ├── repository/      TaskRepositoryTest
-  └── service/         TaskServiceTest, ProjectServiceTest, ReportServiceTest
+  ├── service/         TaskServiceTest, ProjectServiceTest, ReportServiceTest
+  └── service/
+      └── scheduling/  TaskDeadlineSchedulerTest
 ```
 
 ### Test project structure (after refactoring)
@@ -290,7 +299,8 @@ src/main/java/com.example.taskmanager
   │   ├── controller/  TaskController
   │   ├── dto/         CreateTaskRequest, TaskResponse, UpdateTaskRequest
   │   ├── exception/   TaskNotFoundException, DependencyNotMetException
-  │   └── mapper/      TaskMapper
+  │   ├── mapper/      TaskMapper
+  │   └── scheduling/  TaskDeadlineScheduler
   ├── project/
   │   ├── model/       Project
   │   ├── repository/  ProjectRepository
@@ -298,11 +308,13 @@ src/main/java/com.example.taskmanager
   │   ├── controller/  ProjectController
   │   ├── dto/         CreateProjectRequest, ProjectResponse
   │   ├── exception/   ProjectNotFoundException
-  │   └── mapper/      ProjectMapper
+  │   ├── mapper/      ProjectMapper
+  │   └── scheduling/  ProjectMilestoneTracker
   └── common/
       ├── exception/   GlobalExceptionHandler
       ├── config/      DataInitializer
-      └── service/     ReportService
+      ├── service/     ReportService
+      └── scheduling/  SchedulingUtils
 
 src/test/java/com.example.taskmanager
   ├── task/
@@ -314,7 +326,8 @@ src/test/java/com.example.taskmanager
   │   ├── service/     ProjectServiceTest
   │   └── controller/  ProjectControllerTest
   └── common/
-      └── service/     ReportServiceTest
+      ├── service/     ReportServiceTest
+      └── scheduling/  TaskDeadlineSchedulerTest
 ```
 
 ## Claude Code Plugin

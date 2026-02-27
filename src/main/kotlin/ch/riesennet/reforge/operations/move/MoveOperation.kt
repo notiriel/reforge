@@ -21,6 +21,8 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.AllClassesSearch
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiUtil
+import com.intellij.application.options.CodeStyle
+import com.intellij.psi.codeStyle.JavaCodeStyleSettings
 import com.intellij.refactoring.PackageWrapper
 import com.intellij.refactoring.move.moveClassesOrPackages.SingleSourceRootMoveDestination
 
@@ -53,6 +55,14 @@ class MoveOperation : Operation {
         val sourcePackages = mutableSetOf<String>()
         // Track successful moves for stale import fixing: oldFqn -> newFqn
         val movedClasses = mutableMapOf<String, String>()
+
+        // Prevent optimizeImports from introducing star imports, which can cause
+        // "reference is ambiguous" errors when two star-imported packages contain
+        // classes with the same simple name (Bug 3/4 fix).
+        val javaSettings = CodeStyle.getSettings(project)
+            .getCustomSettings(JavaCodeStyleSettings::class.java)
+        javaSettings.CLASS_COUNT_TO_USE_IMPORT_ON_DEMAND = Int.MAX_VALUE
+        javaSettings.NAMES_COUNT_TO_USE_IMPORT_ON_DEMAND = Int.MAX_VALUE
 
         // Phase 1: Resolve all patterns (multi-pass)
         data class ResolvedEntry(val target: String, val pattern: String, val classes: List<PsiClass>)
@@ -158,7 +168,28 @@ class MoveOperation : Operation {
             }
         }
 
-        // Phase 2.5: Optimize imports in all affected files (deferred from individual moves)
+        // Phase 2.5: Infer MapStruct *Impl moves
+        if (!dryRun && movedClasses.isNotEmpty()) {
+            inferGeneratedClassMoves(project, movedClasses, reporter)
+        }
+
+        // Phase 3: Fix stale imports that weren't updated due to indexing issues
+        // Must run BEFORE optimizeImports — otherwise optimizeImports removes stale
+        // (unresolvable) imports before they can be fixed with the correct new FQN.
+        if (!dryRun && movedClasses.isNotEmpty()) {
+            fixStaleImports(project, movedClasses, reporter)
+        }
+
+        // Phase 3.25: Add missing imports for same-package splits
+        // When classes from the same source package are moved to different target packages,
+        // their same-package references (no import needed) become cross-package references
+        // that need explicit imports. The move processor doesn't always handle this.
+        if (!dryRun && movedClasses.isNotEmpty()) {
+            addMissingImportsForSamePackageSplits(project, movedClasses, reporter)
+        }
+
+        // Phase 3.5: Optimize imports in all affected files (deferred from individual moves)
+        // Runs after stale import + missing import fixing. Removes unused imports and organizes.
         if (!dryRun && allAffectedFiles.isNotEmpty()) {
             reporter.section("Optimizing imports in affected files...")
             IndexingHelper.waitForSmartMode(project)
@@ -177,16 +208,6 @@ class MoveOperation : Operation {
                 VirtualFileManager.getInstance().syncRefresh()
             }
             reporter.info("  Optimized imports in ${allAffectedFiles.count { it.isValid }} file(s)")
-        }
-
-        // Phase 2.75: Infer MapStruct *Impl moves
-        if (!dryRun && movedClasses.isNotEmpty()) {
-            inferGeneratedClassMoves(project, movedClasses, reporter)
-        }
-
-        // Phase 3: Fix stale imports that weren't updated due to indexing issues
-        if (!dryRun && movedClasses.isNotEmpty()) {
-            fixStaleImports(project, movedClasses, reporter)
         }
 
         // Phase 4: Fix visibility issues for package-private members accessed from other packages
@@ -434,6 +455,85 @@ class MoveOperation : Operation {
         val newImport = (dummyFile as PsiJavaFile).importList?.importStatements?.firstOrNull()
             ?: throw IllegalStateException("Failed to create import statement for $newFqn")
         importStatement.replace(newImport)
+    }
+
+    /**
+     * Adds missing imports when classes from the same source package are moved to different
+     * target packages. Before the move, these classes could reference each other without imports
+     * (same-package access). After the move, they're in different packages and need explicit imports.
+     *
+     * The IntelliJ move processor doesn't always handle this in headless mode.
+     * Any unnecessary imports added here are cleaned up by optimizeImports in the next phase.
+     */
+    private fun addMissingImportsForSamePackageSplits(
+        project: Project,
+        movedClasses: Map<String, String>,
+        reporter: ProgressReporter
+    ) {
+        reporter.section("Adding missing imports for same-package splits...")
+
+        // Group by old package to find packages that were split
+        val byOldPackage = movedClasses.entries.groupBy { it.key.substringBeforeLast('.') }
+        var addedCount = 0
+
+        ApplicationManager.getApplication().invokeAndWait {
+            WriteCommandAction.writeCommandAction(project).run<Exception> {
+                val scope = GlobalSearchScope.projectScope(project)
+
+                for ((_, entriesInSameOldPkg) in byOldPackage) {
+                    // Group by new package — if all went to same package, no split occurred
+                    val byNewPackage = entriesInSameOldPkg.groupBy { it.value.substringBeforeLast('.') }
+                    if (byNewPackage.size <= 1) continue
+
+                    for (entry in entriesInSameOldPkg) {
+                        val newFqn = entry.value
+                        val newPkg = newFqn.substringBeforeLast('.')
+
+                        val psiClass = JavaPsiFacade.getInstance(project).findClass(newFqn, scope)
+                            ?: continue
+                        val file = psiClass.containingFile as? PsiJavaFile ?: continue
+                        val importList = file.importList ?: continue
+
+                        val existingImports = importList.importStatements
+                            .mapNotNull { it.qualifiedName }
+                            .toSet()
+
+                        // Check each other class from the same old package in a different new package
+                        for (otherEntry in entriesInSameOldPkg) {
+                            val otherNewFqn = otherEntry.value
+                            val otherNewPkg = otherNewFqn.substringBeforeLast('.')
+
+                            if (otherNewPkg == newPkg) continue
+                            if (otherNewFqn in existingImports) continue
+
+                            val otherSimpleName = otherNewFqn.substringAfterLast('.')
+
+                            // Text-based check: does this file reference the other class?
+                            // False positives are OK — optimizeImports cleans up unused imports later.
+                            if (!file.text.contains(otherSimpleName)) continue
+
+                            val targetClass = JavaPsiFacade.getInstance(project)
+                                .findClass(otherNewFqn, scope) ?: continue
+                            try {
+                                val importStatement = JavaPsiFacade.getElementFactory(project)
+                                    .createImportStatement(targetClass)
+                                importList.add(importStatement)
+                                addedCount++
+                            } catch (e: Exception) {
+                                System.err.println("  Warning: Could not add import for $otherNewFqn in ${file.name}: ${e.message}")
+                            }
+                        }
+                    }
+                }
+            }
+            VirtualFileManager.getInstance().syncRefresh()
+        }
+
+        if (addedCount > 0) {
+            reporter.info("  Added $addedCount missing import(s)")
+        } else {
+            reporter.info("  No missing imports to add")
+        }
     }
 
     /**
